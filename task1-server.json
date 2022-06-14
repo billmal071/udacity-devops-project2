@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "EnvironmentName",
+    "ParameterValue": "UdacityTask2"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": "task1key"
+  },
+  {
+    "ParameterKey": "EC2InstanceType",
+    "ParameterValue": "t2.medium"
+  },
+  {
+    "ParameterKey": "EC2Image",
+    "ParameterValue": "ami-09d56f8956ab235b3"
+  }
+]

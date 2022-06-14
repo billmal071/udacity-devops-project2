@@ -1,0 +1,245 @@
+Description: >
+  Servers, Security groups, load balancer, target group
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+    Default: UdacityTask2
+
+  KeyName:
+    Description: "EC2 instance key name"
+    Type: String
+    Default: "task1key"
+
+  EC2InstanceType:
+    Description: "EC2 instance type"
+    Type: String
+    Default: "t2.medium"
+
+  EC2Image:
+    Description: "EC2 Image Id"
+    Type: String
+    Default: "ami-09d56f8956ab235b3"
+
+  LoadBalancerName:
+    Description: "Load balancer name"
+    Type: String
+    Default: iac-task-lb
+
+Resources:
+  LBSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to our load balancer
+      VpcId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-VPCID"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  WebServerSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to our hosts and SSH from local only
+      VpcId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-VPCID"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+
+  # BastionHost:
+  #   Type: AWS::EC2::Instance
+  #   Properties:
+  #     ImageId: !Ref EC2Image
+  #     KeyName: !Ref KeyName
+  #     InstanceType: !Ref EC2InstanceType
+  #     NetworkInterfaces:
+  #       - AssociatePublicIpAddress: true
+  #         DeviceIndex: "0"
+  #         GroupSet:
+  #           - !Ref WebServerSecGroup
+  #         SubnetId: !Ref PublicSubnet1
+  #     BlockDeviceMappings:
+  #       - DeviceName: "/dev/sdk"
+  #         Ebs:
+  #           VolumeSize: 10
+
+  # JumpBox:
+  #   Type: "AWS::EC2::Instance"
+  #   Properties:
+  #     LaunchTemplate:
+  #       LaunchTemplateId: !Ref RequiredTagsLaunchTemplate
+  #       Version: "1"
+  #     InstanceType: !Ref EC2InstanceType
+  #     KeyName: !Ref KeyName
+  #     ImageId: !Ref EC2Image
+  #     NetworkInterfaces:
+  #       - AssociatePublicIpAddress: true
+  #         DeviceIndex: "0"
+  #         GroupSet:
+  #           - !Ref WebServerSecGroup
+  #         SubnetId: !ImportValue
+  #           "Fn::Sub": "${EnvironmentName}-PUB1-SN"
+  #     BlockDeviceMappings:
+  #       - DeviceName: "/dev/sdk"
+  #         Ebs:
+  #           VolumeSize: 10
+
+  # RequiredTagsLaunchTemplate:
+  #   Type: "AWS::EC2::LaunchTemplate"
+  #   Properties:
+  #     LaunchTemplateData:
+  #       TagSpecifications:
+  #         - ResourceType: instance
+  #           Tags:
+  #             - Key: Name
+  #               Value: BastionHost
+
+  EC2InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref "MyRole"
+
+  MyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: "Task1Policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:*"
+                Resource:
+                  - "*"
+
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: true
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      ImageId: !Ref EC2Image
+      # KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref "WebServerSecGroup"
+      InstanceType: !Ref EC2InstanceType
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sdk"
+          Ebs:
+            VolumeSize: 10
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo apt-get update -y
+          sudo apt-get install apache2 -y
+          sudo systemctl start apache2.service
+          sudo systemctl enable apache2.service
+          sudo echo "it works! Udagram, Udacity" > /var/www/html/index.html
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones:
+        - !Select [0, !GetAZs ""]
+        - !Select [1, !GetAZs ""]
+      Cooldown: "300"
+      DesiredCapacity: "4"
+      HealthCheckGracePeriod: 300
+      HealthCheckType: "EC2"
+      LaunchConfigurationName: !Ref LaunchConfig
+      MaxSize: "4"
+      MinSize: "4"
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PRIV-NETS"
+      TargetGroupARNs:
+        - !Ref TargetGroup
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Ref LoadBalancerName
+      Scheme: "internet-facing"
+      Type: "application"
+      SecurityGroups:
+        - !Ref LBSecGroup
+      Subnets:
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PRI1-SN"
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PRI2-SN"
+
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: "HTTP"
+      DefaultActions:
+        - Type: "forward"
+          TargetGroupArn: !Ref TargetGroup
+
+  LoadBalancerListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: "forward"
+          TargetGroupArn: !Ref TargetGroup
+      ListenerArn: !Ref LoadBalancerListener
+      Priority: 1
+      Conditions:
+        - Field: "path-pattern"
+          Values:
+            - "/*"
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckProtocol: "HTTP"
+      HealthCheckPort: "80"
+      HealthCheckPath: "/"
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: "200"
+      Protocol: "HTTP"
+      Port: 80
+      VpcId:
+        Fn::ImportValue:
+          Fn::Sub: "${EnvironmentName}-VPCID"
+
+Outputs:
+  Task1LoadBalancerDNSName:
+    Description: The DNSName of the load balancer
+    Value: !Join [":", [http, !GetAtt LoadBalancer.DNSName]]
