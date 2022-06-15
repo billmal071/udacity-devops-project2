@@ -197,7 +197,7 @@ Resources:
         - !Ref LBSecGroup
       Subnets:
         - Fn::ImportValue: !Sub "${EnvironmentName}-PUB1-SN"
-        - Fn::ImportValue: !SUb "${EnvironmentName}-PUB2-SN"
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PUB2-SN"
 
   LoadBalancerListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -244,3 +244,4 @@ Outputs:
   Task1LoadBalancerDNSName:
     Description: The DNSName of the load balancer
     Value: !Join [":", [http, !GetAtt LoadBalancer.DNSName]]
+    #http://iac-task-lb-402850890.us-east-1.elb.amazonaws.com
