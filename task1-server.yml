@@ -196,8 +196,8 @@ Resources:
       SecurityGroups:
         - !Ref LBSecGroup
       Subnets:
-        - Fn::ImportValue: !Sub "${EnvironmentName}-PRI1-SN"
-        - Fn::ImportValue: !Sub "${EnvironmentName}-PRI2-SN"
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PUB1-SN"
+        - Fn::ImportValue: !SUb "${EnvironmentName}-PUB2-SN"
 
   LoadBalancerListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
